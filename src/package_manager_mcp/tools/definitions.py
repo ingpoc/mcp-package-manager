@@ -11,6 +11,28 @@ def get_tool_definitions() -> List[Tool]:
     """
     return [
         Tool(
+            name="add",
+            display_name="UV Add",
+            description="Add packages using UV add command",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Installation path"
+                    },
+                    "args": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Arguments for uv add (e.g. [\"-r\", \"requirements.txt\"])"
+                    }
+                },
+                "required": ["path", "args"]
+            }
+        ),
+        Tool(
             name="install",
             display_name="Install Package",
             description="Install npm or Python package. For Python, use '-r requirements.txt' to install from file.",

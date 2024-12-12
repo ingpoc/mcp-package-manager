@@ -2,7 +2,6 @@
 
 import os
 import logging
-import asyncio
 from typing import Dict, Any, List
 
 from mcp.types import TextContent
@@ -20,6 +19,39 @@ class ToolHandlers:
     def __init__(self):
         self.npm_manager = NPMPackageManager()
         self.uv_manager = UVPackageManager()
+
+    async def handle_add(self, arguments: Dict[str, Any]) -> List[TextContent]:
+        """Handle UV add command."""
+        path = arguments["path"]
+        args = arguments["args"]
+
+        logger.info(f"Running UV add with args {args} in {path}")
+
+        # Security checks
+        if "-r" in args and "requirements.txt" in args:
+            if not await SecurityValidator.verify_package("-r requirements.txt", path):
+                return create_text_response("Some packages in requirements.txt are not in whitelist")
+
+        if not await SecurityValidator.verify_path(path):
+            return create_text_response(f"Path {path} not in allowed directory")
+
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(path, exist_ok=True)
+
+            # Initialize project if needed
+            if not os.path.exists(os.path.join(path, 'pyproject.toml')):
+                init_msg, init_success, _ = await self.uv_manager.init(path, run_subprocess)
+                if not init_success:
+                    return create_text_response(f"Failed to initialize project: {init_msg}")
+
+            # Run UV add command
+            message, success, _ = await self.uv_manager.add(args, path, run_subprocess)
+            return create_text_response(message)
+
+        except Exception as e:
+            logger.error(f"UV add error: {e}", exc_info=True)
+            return create_text_response(f"UV add error: {str(e)}")
 
     async def handle_install(self, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle package installation."""
@@ -47,9 +79,6 @@ class ToolHandlers:
 
             return create_text_response(message)
 
-        except asyncio.TimeoutError:
-            logger.error(f"Installation timeout for {package}")
-            return create_text_response(f"Installation timeout for {package}")
         except Exception as e:
             logger.error(f"Installation error: {e}", exc_info=True)
             return create_text_response(f"Installation error: {str(e)}")
@@ -71,8 +100,6 @@ class ToolHandlers:
 
             return create_text_response(message)
 
-        except asyncio.TimeoutError:
-            return create_text_response(f"Uninstallation timeout for {package}")
         except Exception as e:
             return create_text_response(f"Uninstallation error: {str(e)}")
 
@@ -94,8 +121,6 @@ class ToolHandlers:
 
             return create_text_response(message)
 
-        except asyncio.TimeoutError:
-            return create_text_response("Project initialization timeout")
         except Exception as e:
             return create_text_response(f"Project initialization error: {str(e)}")
 
@@ -112,8 +137,6 @@ class ToolHandlers:
             message, success, _ = await self.uv_manager.create_venv(path, venv_name, run_subprocess)
             return create_text_response(message)
 
-        except asyncio.TimeoutError:
-            return create_text_response("Virtual environment creation timeout")
         except Exception as e:
             return create_text_response(f"Virtual environment creation error: {str(e)}")
 
@@ -123,7 +146,8 @@ class ToolHandlers:
             "install": self.handle_install,
             "uninstall": self.handle_uninstall,
             "init": self.handle_init,
-            "create_venv": self.handle_create_venv
+            "create_venv": self.handle_create_venv,
+            "add": self.handle_add
         }
         
         handler = handlers.get(name)

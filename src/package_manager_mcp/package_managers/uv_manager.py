@@ -17,6 +17,10 @@ class UVPackageManager:
             if not os.path.exists(req_file):
                 return False
                 
+            # If wildcard is in allowed packages, allow all
+            if "*" in config.ALLOWED_PACKAGES:
+                return True
+                
             with open(req_file, 'r') as f:
                 requirements = f.readlines()
                 
@@ -37,6 +41,34 @@ class UVPackageManager:
         except Exception as e:
             logger.error(f"Error verifying requirements.txt: {e}")
             return False
+
+    @staticmethod
+    async def add(args: List[str], path: str, run_subprocess) -> Tuple[str, bool, str]:
+        """Add packages using UV add command."""
+        try:
+            # Check if we need to verify requirements.txt
+            if "-r" in args and "requirements.txt" in args:
+                if not await UVPackageManager.verify_requirements_file(path):
+                    return "Some packages in requirements.txt are not in whitelist", False, ""
+
+            # Create base command
+            cmd = [config.UV_PATH, "add"] + args
+
+            # Run the UV add command
+            stdout, stderr, returncode = await run_subprocess(
+                cmd,
+                path,
+                config.INSTALL_TIMEOUT
+            )
+
+            if returncode == 0:
+                return f"Successfully added packages using 'uv add {' '.join(args)}'\n{stdout}", True, stdout
+            else:
+                return f"Package addition failed:\n{stderr}", False, stderr
+
+        except Exception as e:
+            logger.error(f"UV add error: {e}")
+            return f"UV add error: {str(e)}", False, str(e)
 
     @staticmethod
     async def install(package: str, path: str, run_subprocess) -> Tuple[str, bool, str]:
@@ -62,7 +94,7 @@ class UVPackageManager:
                 if use_add:
                     # For uv add, we need to validate the package name against whitelist
                     package_name = package.split('==')[0].split('>=')[0].split('<=')[0].strip()
-                    if not any(allowed in package_name for allowed in config.ALLOWED_PACKAGES):
+                    if "*" not in config.ALLOWED_PACKAGES and not any(allowed in package_name for allowed in config.ALLOWED_PACKAGES):
                         return f"Package {package_name} not in whitelist", False, ""
                     install_cmd = [config.UV_PATH, 'add', package]
                 else:
@@ -134,12 +166,6 @@ class UVPackageManager:
     async def create_venv(path: str, venv_name: str, run_subprocess) -> Tuple[str, bool, str]:
         """Create a new virtual environment using UV."""
         try:
-            # Validate the venv path is within allowed project directory
-            venv_path = os.path.join(path, venv_name)
-            if not venv_path.startswith(config.PROJECT_DIR):
-                return f"Virtual environment path {venv_path} is outside allowed project directory", False, ""
-
-            # Create venv using UV
             cmd = [config.UV_PATH, 'venv', venv_name]
             
             stdout, stderr, returncode = await run_subprocess(
@@ -149,7 +175,7 @@ class UVPackageManager:
             )
 
             if returncode == 0:
-                # Check if venv was created successfully
+                venv_path = os.path.join(path, venv_name)
                 if os.path.exists(venv_path):
                     return f"Successfully created virtual environment at {venv_path}\n{stdout}", True, stdout
                 else:

@@ -47,8 +47,9 @@ def find_uv_path() -> str:
     return 'uv'  # Default fallback
 
 # Package Manager Configuration
-ALLOWED_PACKAGES: List[str] = os.getenv('ALLOWED_PACKAGES', 'typescript,react,express').split(',')
-MAX_INSTALL_SIZE: int = int(os.getenv('MAX_INSTALL_SIZE', '50000000'))
+allowed_packages_env = os.getenv('ALLOWED_PACKAGES', 'typescript,react,express')
+ALLOWED_PACKAGES: List[str] = ['*'] if allowed_packages_env == '*' else allowed_packages_env.split(',')
+
 PROJECT_DIR: str = os.getenv('PROJECT_DIR', 'H:/projects')
 INSTALL_TIMEOUT: int = int(os.getenv('INSTALL_TIMEOUT', '300000'))
 UNINSTALL_TIMEOUT: int = int(os.getenv('UNINSTALL_TIMEOUT', '60000'))

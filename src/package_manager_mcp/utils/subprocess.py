@@ -1,70 +1,52 @@
-"""Subprocess utility functions for package management."""
+"""Subprocess utility functions."""
 
 import asyncio
-import sys
 import logging
 from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
-async def run_subprocess(cmd: List[str], cwd: str, timeout: int) -> Tuple[str, str, int]:
+async def run_subprocess(cmd: List[str], cwd: str, timeout: int = 30000) -> Tuple[str, str, int]:
     """Run a subprocess with timeout.
     
     Args:
-        cmd: Command list to execute
+        cmd: Command and arguments
         cwd: Working directory
         timeout: Timeout in milliseconds
         
     Returns:
-        Tuple of (stdout, stderr, return_code)
+        Tuple[str, str, int]: stdout, stderr, return code
     """
     try:
-        # Log the exact command being executed
-        logger.debug(f"Executing command: {' '.join(cmd)} in directory: {cwd}")
+        # Convert milliseconds to seconds for asyncio
+        timeout_seconds = timeout / 1000
         
-        # For Windows, always use shell=True when running npm
-        use_shell = sys.platform == 'win32' and 'npm' in ' '.join(cmd)
+        logger.debug(f"Running command: {cmd} in {cwd} with timeout {timeout_seconds}s")
         
-        if use_shell:
-            # For Windows, combine command into a single string
-            cmd_str = ' '.join(cmd)
-            logger.debug(f"Using shell command: {cmd_str}")
-            process = await asyncio.create_subprocess_shell(
-                cmd_str,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                shell=True
-            )
-        else:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=timeout/1000
+        # Create subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-
-        stdout_str = stdout.decode() if stdout else ""
-        stderr_str = stderr.decode() if stderr else ""
         
-        logger.debug(f"Command output - stdout: {stdout_str}, stderr: {stderr_str}, returncode: {process.returncode}")
-        
-        return stdout_str, stderr_str, process.returncode
-        
-    except asyncio.TimeoutError:
-        logger.error(f"Command timed out: {' '.join(cmd)}")
-        if 'process' in locals():
-            process.terminate()
-            await process.wait()
-        raise
+        # Wait for completion with timeout
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout_seconds
+            )
+            return stdout.decode(), stderr.decode(), process.returncode
+            
+        except asyncio.TimeoutError:
+            logger.error(f"Command timed out after {timeout_seconds}s: {cmd}")
+            try:
+                process.kill()
+            except:
+                pass
+            raise
+            
     except Exception as e:
-        logger.error(f"Subprocess error: {e}")
-        if 'process' in locals():
-            process.terminate()
-            await process.wait()
-        raise
+        logger.error(f"Error running command {cmd}: {e}")
+        return "", str(e), 1
